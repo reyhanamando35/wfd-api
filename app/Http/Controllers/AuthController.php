@@ -34,8 +34,8 @@ class AuthController extends Controller
 
     public function registerCustomer(Request $request)
     {
-        // Validate the request data
-        $request->validate([
+        // Validasi (sudah benar)
+        $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
@@ -43,25 +43,28 @@ class AuthController extends Controller
             'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
-        // Handle file upload
+        // Handle file upload (sudah benar)
         $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
 
-        // Create the user
+        // Buat User (ubah sedikit untuk menggunakan data yang sudah divalidasi)
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'bio' => $request->bio,
+            'name' => $validatedData['name'],
+            'email' => $validatedData['email'],
+            'password' => Hash::make($validatedData['password']),
+            'bio' => $validatedData['bio'],
             'profile_picture' => 'storage/' . $profilePicturePath,
         ]);
 
-        // Create customer
-        $customer = Customer::create([
+        // Buat customer (sudah benar)
+        Customer::create([
             'user_id' => $user->id,
         ]);
 
-        // Set redirect route
-        return redirect()->route('login.customer')->with('success', 'Account created!');
+        // Kembalikan response JSON, bukan redirect!
+        return response()->json([
+            'message' => 'Account created successfully!',
+            'user' => $user
+        ], 201); // 201 artinya "Created"
     }
 
     public function registerIllustrator(Request $request)
