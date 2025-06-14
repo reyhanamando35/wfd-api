@@ -7,11 +7,17 @@ use App\Models\Illustrator;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Session;
+use App\Utils\HttpResponse; 
+use Illuminate\Support\Facades\Validator;
+use App\Utils\HttpResponseCode; 
+use Illuminate\Support\Facades\Auth;
 
 use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
+    use HttpResponse;
+
     public function showRegisterCustomer()
     {
         return view('auth.register.customer');
@@ -34,8 +40,8 @@ class AuthController extends Controller
 
     public function registerCustomer(Request $request)
     {
-        // Validasi (sudah benar)
-        $validatedData = $request->validate([
+        // 1. Validasi data secara manual
+        $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
@@ -43,46 +49,15 @@ class AuthController extends Controller
             'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
-        // Handle file upload (sudah benar)
+        if ($validator->fails()) {
+            // Jika validasi gagal, kembalikan error dengan format JSON
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
+        }
+
+        // 2. Handle file upload (sudah benar)
         $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
 
-        // Buat User (ubah sedikit untuk menggunakan data yang sudah divalidasi)
-        $user = User::create([
-            'name' => $validatedData['name'],
-            'email' => $validatedData['email'],
-            'password' => Hash::make($validatedData['password']),
-            'bio' => $validatedData['bio'],
-            'profile_picture' => 'storage/' . $profilePicturePath,
-        ]);
-
-        // Buat customer (sudah benar)
-        Customer::create([
-            'user_id' => $user->id,
-        ]);
-
-        // Kembalikan response JSON, bukan redirect!
-        return response()->json([
-            'message' => 'Account created successfully!',
-            'user' => $user
-        ], 201); // 201 artinya "Created"
-    }
-
-    public function registerIllustrator(Request $request)
-    {
-        // Validate the request data
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8',
-            'bio' => 'required|string|max:500',
-            'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
-            'experience_years' => 'required|integer',
-        ]);
-
-        // Handle file upload
-        $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
-
-        // Create the user
+        // 3. Buat user
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
@@ -91,94 +66,152 @@ class AuthController extends Controller
             'profile_picture' => 'storage/' . $profilePicturePath,
         ]);
 
-        // Create illustrator
-        $illustrator = Illustrator::create([
+        // 4. Buat customer
+        Customer::create([
             'user_id' => $user->id,
-            'experience_years' => $request['experience_years'],
-            'portofolio_link' => $request['portofolio_link'] ? $request['portofolio_link'] : null,
-            'is_open_commision' => $request['is_open_commision'] ? 1 : 0,
         ]);
 
-        // Set redirect route
-        return redirect()->route('login.illustrator')->with('success', 'Account created!');
+        // 5. Kembalikan response sukses dengan format JSON
+        return $this->success('Account created successfully!', $user, HttpResponseCode::HTTP_CREATED);
+    }
+
+    public function registerIllustrator(Request $request)
+    {
+        // 1. Validasi data
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8',
+            'bio' => 'required|string|max:500',
+            'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            'experience_years' => 'required|integer|min:0',
+            'portofolio_link' => 'nullable|url', // 'nullable' berarti tidak wajib
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
+        }
+
+        // 2. Handle file upload
+        $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
+
+        // 3. Buat User
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'bio' => $request->bio,
+            'profile_picture' => 'storage/' . $profilePicturePath,
+        ]);
+
+        // 4. Buat Illustrator
+        $illustrator = Illustrator::create([
+            'user_id' => $user->id,
+            'experience_years' => $request->experience_years,
+            'portofolio_link' => $request->portofolio_link,
+            'is_open_commision' => $request->boolean('is_open_commision'), // Cara aman untuk handle boolean
+        ]);
+
+        // 5. Kembalikan response sukses
+        return $this->success(
+            'Illustrator account created successfully!',
+            [
+                'user' => $user,
+                'illustrator_details' => $illustrator
+            ],
+            HttpResponseCode::HTTP_CREATED
+        );
     }
 
     public function loginCustomer(Request $request)
     {
-        // Validate the request data
-        $request->validate([
+        // 1. Validasi
+        $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // Find the user by email
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // 2. Coba otentikasi menggunakan Auth::attempt
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
+        }
+
+        // 3. Dapatkan user yang sudah terotentikasi
         $user = User::where('email', $request->email)->first();
 
-        // No email found
-        if (!$user) {
-            return redirect()->back()->with('error', 'Email not found!');
+        // 4. Pastikan user ini adalah seorang customer
+        if (!$user->customer()->exists()) {
+             // Jika bukan customer, logout dan beri error
+             Auth::logout();
+             return $this->error('Your account is not a customer account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
-        // Check password
-        if (!Hash::check($request->password, $user->password)) {
-            return redirect()->back()->with('error', 'Invalid credentials!');
-        }
+        // 5. Buat API token untuk user
+        $token = $user->createToken('auth_token_customer')->plainTextToken;
 
-        // Search the customer
-        $customer = Customer::where('user_id', $user->id)->first();
-        if (!$customer) {
-            return redirect()->back()->with('error', 'Not a customer!');
-        }
-
-        // Log the user in
-        session()->flush();
-        Session::put('user_id', $user->id);
-        Session::put('profile_picture', $user->profile_picture);
-        Session::put('customer_id', $customer->id);
-
-        // Redirect
-        return redirect()->route('home')->with('success', 'Login successful!');
+        // 6. Kembalikan response sukses beserta token dan data user
+        return $this->success(
+            'Login successful!',
+            [
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'customer_id' => $user->customer->id
+            ]
+        );
     }
 
     public function loginIllustrator(Request $request)
     {
-        // Validate the request data
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // Find the user by email
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // 2. Coba otentikasi menggunakan Auth::attempt
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
+        }
+
+        // 3. Dapatkan user yang sudah terotentikasi
         $user = User::where('email', $request->email)->first();
 
-        // No email found
-        if (!$user) {
-            return redirect()->back()->with('error', 'Email not found!');
+        // 4. Pastikan user ini adalah seorang illustrator
+        if (!$user->illustrator()->exists()) {
+             // Jika bukan illustrator, logout dan beri error
+             Auth::logout();
+             return $this->error('Your account is not a Illustrator account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
-        // Check password
-        if (!Hash::check($request->password, $user->password)) {
-            return redirect()->back()->with('error', 'Invalid credentials!');
-        }
+        // 5. Buat API token untuk user
+        $token = $user->createToken('auth_token_illustrator')->plainTextToken;
 
-        // Search the illustrator
-        $illustrator = Illustrator::where('user_id', $user->id)->first();
-        if(!$illustrator){
-            return redirect()->back()->with('error', 'Not an illustrator!');
-        }
-
-        // Log the user in
-        session()->flush();
-        Session::put('user_id', $user->id);
-        Session::put('profile_picture', $user->profile_picture);
-        Session::put('illustrator_id', $illustrator->id);
-
-        // Redirect
-        return redirect()->route('home')->with('success', 'Login successful!');
+        // 6. Kembalikan response sukses beserta token dan data user
+        return $this->success(
+            'Login successful!',
+            [
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'illustrator_id' => $user->illustrator->id
+            ]
+        );
     }
 
-    public function logout(){
-        session()->flush();
-        return redirect()->route('index')->with('success', 'Logged out!');
+    public function logout(Request $request)
+    {
+        $request->user()->tokens->each(function ($token) {
+            $token->delete();
+        });
+
+        return $this->success('Logout Successfully');
     }
 }
