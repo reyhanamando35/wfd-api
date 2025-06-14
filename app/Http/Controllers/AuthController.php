@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Session;
 use App\Utils\HttpResponse; 
 use Illuminate\Support\Facades\Validator;
 use App\Utils\HttpResponseCode; 
+use Illuminate\Support\Facades\Auth;
 
 use Illuminate\Http\Request;
 
@@ -124,80 +125,93 @@ class AuthController extends Controller
 
     public function loginCustomer(Request $request)
     {
-        // Validate the request data
-        $request->validate([
+        // 1. Validasi
+        $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // Find the user by email
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // 2. Coba otentikasi menggunakan Auth::attempt
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
+        }
+
+        // 3. Dapatkan user yang sudah terotentikasi
         $user = User::where('email', $request->email)->first();
 
-        // No email found
-        if (!$user) {
-            return redirect()->back()->with('error', 'Email not found!');
+        // 4. Pastikan user ini adalah seorang customer
+        if (!$user->customer()->exists()) {
+             // Jika bukan customer, logout dan beri error
+             Auth::logout();
+             return $this->error('Your account is not a customer account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
-        // Check password
-        if (!Hash::check($request->password, $user->password)) {
-            return redirect()->back()->with('error', 'Invalid credentials!');
-        }
+        // 5. Buat API token untuk user
+        $token = $user->createToken('auth_token_customer')->plainTextToken;
 
-        // Search the customer
-        $customer = Customer::where('user_id', $user->id)->first();
-        if (!$customer) {
-            return redirect()->back()->with('error', 'Not a customer!');
-        }
-
-        // Log the user in
-        session()->flush();
-        Session::put('user_id', $user->id);
-        Session::put('profile_picture', $user->profile_picture);
-        Session::put('customer_id', $customer->id);
-
-        // Redirect
-        return redirect()->route('home')->with('success', 'Login successful!');
+        // 6. Kembalikan response sukses beserta token dan data user
+        return $this->success(
+            'Login successful!',
+            [
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'customer_id' => $user->customer->id
+            ]
+        );
     }
 
     public function loginIllustrator(Request $request)
     {
-        // Validate the request data
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // Find the user by email
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // 2. Coba otentikasi menggunakan Auth::attempt
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
+        }
+
+        // 3. Dapatkan user yang sudah terotentikasi
         $user = User::where('email', $request->email)->first();
 
-        // No email found
-        if (!$user) {
-            return redirect()->back()->with('error', 'Email not found!');
+        // 4. Pastikan user ini adalah seorang illustrator
+        if (!$user->illustrator()->exists()) {
+             // Jika bukan illustrator, logout dan beri error
+             Auth::logout();
+             return $this->error('Your account is not a Illustrator account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
-        // Check password
-        if (!Hash::check($request->password, $user->password)) {
-            return redirect()->back()->with('error', 'Invalid credentials!');
-        }
+        // 5. Buat API token untuk user
+        $token = $user->createToken('auth_token_illustrator')->plainTextToken;
 
-        // Search the illustrator
-        $illustrator = Illustrator::where('user_id', $user->id)->first();
-        if(!$illustrator){
-            return redirect()->back()->with('error', 'Not an illustrator!');
-        }
-
-        // Log the user in
-        session()->flush();
-        Session::put('user_id', $user->id);
-        Session::put('profile_picture', $user->profile_picture);
-        Session::put('illustrator_id', $illustrator->id);
-
-        // Redirect
-        return redirect()->route('home')->with('success', 'Login successful!');
+        // 6. Kembalikan response sukses beserta token dan data user
+        return $this->success(
+            'Login successful!',
+            [
+                'token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $user,
+                'illustrator_id' => $user->illustrator->id
+            ]
+        );
     }
 
-    public function logout(){
-        session()->flush();
-        return redirect()->route('index')->with('success', 'Logged out!');
+    public function logout(Request $request)
+    {
+        $request->user()->tokens->each(function ($token) {
+            $token->delete();
+        });
+
+        return $this->success('Logout Successfully');
     }
 }
