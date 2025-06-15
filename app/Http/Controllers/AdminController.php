@@ -16,11 +16,16 @@ use App\Utils\HttpResponse;
 use App\Utils\HttpResponseCode; 
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-
+use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
     use HttpResponse;
+
+    public function __construct()
+    {
+        
+    }
 
     public function index()
     {
@@ -42,6 +47,8 @@ class AdminController extends Controller
         // 1. Validasi input
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
+            'name' => 'required|string|max:255',
+            'avatar' => 'nullable|url', // Validasi bahwa avatar adalah URL
         ]);
 
         if ($validator->fails()) {
@@ -53,10 +60,25 @@ class AdminController extends Controller
 
         // 3. Berikan respons
         if ($admin) {
-            // Jika ditemukan, kirim respons sukses
-            return $this->success('Admin verified', $admin);
+            $user = User::firstOrCreate(
+                ['email' => $request->email],
+                [
+                'name' => $request->name, 
+                'password' => bcrypt(Str::random(16)),
+                'bio' => 'tes', // <-- TAMBAHKAN INI untuk memberikan string kosong sebagai default
+                'profile_picture' => $request->avatar
+                ]            
+            );
+
+            // Buat token untuk user admin ini
+            $token = $user->createToken('auth_token_admin')->plainTextToken;
+
+            // Kembalikan respons sukses BESERTA TOKEN
+            return $this->success('Admin verified', [
+                'token' => $token,
+                'user' => $user
+            ]);
         } else {
-            // Jika tidak ditemukan, kirim respons error
             return $this->error('Unauthorized email', HttpResponseCode::HTTP_UNAUTHORIZED);
         }
     }

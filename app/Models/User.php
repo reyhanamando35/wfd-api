@@ -53,10 +53,10 @@ class User extends Authenticatable
 
     public function customer(): HasOne
     {
-        return $this->hasOne(Customer::class);
+        return $this->hasOne(Customer::class, 'user_id', 'id');
     }
     public function illustrator(): HasOne
     {
-        return $this->hasOne(Illustrator::class);
+        return $this->hasOne(Illustrator::class, 'user_id', 'id');
     }
 }
