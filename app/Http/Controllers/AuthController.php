@@ -18,6 +18,11 @@ class AuthController extends Controller
 {
     use HttpResponse;
 
+    public function __construct()
+    {
+        
+    }
+
     public function showRegisterCustomer()
     {
         return view('auth.register.customer');
@@ -46,16 +51,16 @@ class AuthController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'bio' => 'required|string|max:500',
-            'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            'profile_picture' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
             // Jika validasi gagal, kembalikan error dengan format JSON
             return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
         }
-
+        
         // 2. Handle file upload (sudah benar)
-        $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
+        // $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
 
         // 3. Buat user
         $user = User::create([
@@ -63,7 +68,7 @@ class AuthController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'bio' => $request->bio,
-            'profile_picture' => 'storage/' . $profilePicturePath,
+            'profile_picture' => $request->profile_picture,
         ]);
 
         // 4. Buat customer
@@ -83,7 +88,7 @@ class AuthController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'bio' => 'required|string|max:500',
-            'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            'profile_picture' => 'required|string|max:255',
             'experience_years' => 'required|integer|min:0',
             'portofolio_link' => 'nullable|url', // 'nullable' berarti tidak wajib
         ]);
@@ -93,7 +98,7 @@ class AuthController extends Controller
         }
 
         // 2. Handle file upload
-        $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
+        // $profilePicturePath = $request->file('profile_picture')->store('profile_pictures', 'public');
 
         // 3. Buat User
         $user = User::create([
@@ -101,7 +106,7 @@ class AuthController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'bio' => $request->bio,
-            'profile_picture' => 'storage/' . $profilePicturePath,
+            'profile_picture' => $request->profile_picture,
         ]);
 
         // 4. Buat Illustrator
@@ -208,10 +213,20 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->tokens->each(function ($token) {
-            $token->delete();
-        });
+        $user = $request->user();
 
-        return $this->success('Logout Successfully');
+        // 2. LAKUKAN PENGECEKAN! Pastikan user benar-benar ada.
+        if ($user) {
+            // Jika user ada, hapus semua token miliknya.
+            // Cara ini lebih efisien daripada menggunakan ->each()
+            $user->tokens()->delete();
+            
+            // Kembalikan response sukses
+            return $this->success('Logout Successfully');
+        }
+
+        // 3. Jika tidak ada user (token tidak valid), kembalikan error Unauthorized.
+        // Ini mencegah server dari crash dan memberikan respons yang benar.
+        return $this->error('User not authenticated.', 401);
     }
 }

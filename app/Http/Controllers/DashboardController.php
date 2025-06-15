@@ -7,15 +7,35 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Utils\HttpResponse; 
+use App\Utils\HttpResponseCode; 
 use App\Models\User;
-
+use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function __construct()
     {
-        $arts = Illustration::limit(8)->get();
-        return view('dashboard', compact('arts'));
+        
+    }
+
+    public function dashboardList()
+    {
+        try {
+            // Query asli: Illustration::limit(8)->get()
+            // Query yang disempurnakan:
+            $arts = Illustration::with('illustrator.user')
+                ->where('is_sold', 0)
+                ->latest()
+                    ->limit(8)
+                ->get();
+
+            return $this->success('Dashboard illustrations retrieved successfully', $arts);
+
+        } catch (\Exception $e) {
+            Log::error('Dashboard illustration retrieval failed: ' . $e->getMessage());
+            return $this->error('Failed to retrieve illustration data.', 500);
+        }
     }
 
     public function getMyListings(Request $request)
