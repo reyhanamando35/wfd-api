@@ -14,6 +14,11 @@ class Illustrator extends Model
         'user_id',
     ];
 
+    // MySQL mengembalikan 0/1, PostgreSQL true/false; cast menyamakan keduanya
+    protected $casts = [
+        'is_open_commision' => 'boolean',
+    ];
+
     public function user():BelongsTo{
         return $this->belongsTo(User::class);
     }

@@ -44,6 +44,7 @@ class AdminController extends Controller
 
     public function checkEmail(Request $request)
     {
+        // Pemanggil sudah dipastikan server frontend oleh VerifyInternalKey (setelah verifikasi Google)
         // 1. Validasi input
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
@@ -66,7 +67,8 @@ class AdminController extends Controller
                 'name' => $request->name, 
                 'password' => bcrypt(Str::random(16)),
                 'bio' => 'tes', // <-- TAMBAHKAN INI untuk memberikan string kosong sebagai default
-                'profile_picture' => $request->avatar
+                // Akun Google tanpa foto mengirim avatar kosong, padahal kolom ini wajib (dulu: error 500, admin gagal login)
+                'profile_picture' => $request->avatar ?: 'assets/pfp.jpg',
                 ]            
             );
 
@@ -93,8 +95,8 @@ class AdminController extends Controller
     public function showCustomers()
     {
         try {
-            // Logika query sama persis seperti di fungsi lama Anda
-            $customers = Customer::with('user')->get();
+            // Hitung jumlah pembelian langsung dari tabel purchases (selalu akurat)
+            $customers = Customer::with('user')->withCount('purchases')->get();
             
             // Kirim data sebagai respons JSON yang sukses
             return $this->success('Customers retrieved successfully', $customers);
@@ -138,7 +140,7 @@ class AdminController extends Controller
             return $this->success('User deleted successfully.');
 
         } catch (\Exception $e) {
-            return $this->error('Failed to delete user.', 500, ['error' => $e->getMessage()]);
+            return $this->error('Failed to delete user.', 500);
         }
     }
 
@@ -158,7 +160,7 @@ class AdminController extends Controller
             return $this->success('Customer retrieved successfully', $customer);
 
         } catch (\Exception $e) {
-            return $this->error('Failed to retrieve customer data.', 500, ['error' => $e->getMessage()]);
+            return $this->error('Failed to retrieve customer data.', 500);
         }
     }
 
@@ -177,7 +179,7 @@ class AdminController extends Controller
             return $this->success('Illustrator retrieved successfully', $illustrator);
 
         } catch (\Exception $e) {
-            return $this->error('Failed to retrieve illustrator data.', 500, ['error' => $e->getMessage()]);
+            return $this->error('Failed to retrieve illustrator data.', 500);
         }
     }
 
@@ -263,7 +265,10 @@ class AdminController extends Controller
     {
         try {
             // Pindahkan query kompleks dari frontend ke sini
+            // Hanya pembelian yang masih pending; pembelian lama yang sudah ditolak tidak boleh ikut muncul
+            // walau karyanya sedang pending lagi karena dibeli customer lain
             $purchases = Purchase::with(['customer.user', 'illustration'])
+                ->where('is_verified', 0)
                 ->whereHas('illustration', function ($query) {
                     $query->where('is_sold', 1);
                 })
@@ -284,6 +289,11 @@ class AdminController extends Controller
 
         if (!$purchase) {
             return $this->error('Purchase not found.', HttpResponseCode::HTTP_NOT_FOUND);
+        }
+
+        // Verify/reject hanya untuk pembelian yang masih pending
+        if ((int) $purchase->is_verified !== 0) {
+            return $this->error('Purchase has already been processed.', HttpResponseCode::HTTP_CONFLICT);
         }
 
         // Gunakan transaksi untuk memastikan kedua update berhasil atau keduanya gagal.
@@ -314,11 +324,16 @@ class AdminController extends Controller
             return $this->error('Purchase not found.', HttpResponseCode::HTTP_NOT_FOUND);
         }
 
+        // Verify/reject hanya untuk pembelian yang masih pending
+        if ((int) $purchase->is_verified !== 0) {
+            return $this->error('Purchase has already been processed.', HttpResponseCode::HTTP_CONFLICT);
+        }
+
         // Gunakan transaksi untuk memastikan kedua update berhasil atau keduanya gagal.
         try {
             DB::transaction(function () use ($purchase) {
-                // 1. Set status verifikasi menjadi 0 (ditolak/belum diverifikasi)
-                $purchase->is_verified = 0;
+                // 1. Tandai ditolak (2). Sebelumnya di-set 0 sehingga tetap tampil "pending" di koleksi customer
+                $purchase->is_verified = 2;
                 $purchase->save();
 
                 // 2. Kembalikan status ilustrasi menjadi tersedia (is_sold = 0)

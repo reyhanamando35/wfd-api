@@ -76,7 +76,8 @@ class DashboardController extends Controller
         $arts = DB::table('illustrations')
             ->join('purchases', 'illustrations.id', '=', 'purchases.illustration_id')
             ->where('purchases.customer_id', $customerId)
-            ->select('illustrations.*') // Pilih kolom yang relevan saja untuk frontend
+            ->whereIn('purchases.is_verified', [0, 1]) // ← pending (0) atau verified (1)
+            ->select('illustrations.*') 
             ->get();
 
         // Kembalikan sebagai response JSON yang sukses
@@ -84,25 +85,65 @@ class DashboardController extends Controller
     }
 
     public function showHistoriesApi(Request $request)
-    {
+{
+    try {
         // Dapatkan pengguna yang sedang login berdasarkan token Sanctum
         $user = $request->user();
 
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token tidak valid atau pengguna tidak ditemukan.'
+            ], 401);
+        }
+
         // Asumsi ada relasi 'customer' di model User
         if (!$user->customer) {
-            return $this->error('Pengguna ini bukan customer.', 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Pengguna ini bukan customer.'
+            ], 404);
         }
 
         $customerId = $user->customer->id;
 
-        $arts = DB::table('illustrations')
-            ->join('purchases', 'illustrations.id', '=', 'purchases.illustration_id')
+        // PERBAIKAN QUERY: Ambil semua data yang diperlukan
+        $arts = DB::table('purchases')
+            ->join('illustrations', 'purchases.illustration_id', '=', 'illustrations.id')
             ->where('purchases.customer_id', $customerId)
-            ->select('illustrations.title', 'illustrations.image', 'purchases.price', 'purchases.created_at as purchase_date') // Pilih kolom yang relevan
+            ->select(
+                'purchases.id as purchase_id',
+                'purchases.payment_method',
+                'purchases.file_path',
+                'purchases.is_verified',
+                'purchases.created_at as purchase_date',
+                'illustrations.id as illustration_id',
+                'illustrations.title',
+                'illustrations.image_path',
+                'illustrations.price'
+            )
+            ->orderBy('purchases.created_at', 'desc') // Urutkan dari terbaru
             ->get();
 
-        return $this->success('Riwayat pembelian berhasil diambil', $arts);
+        // Debug: Log hasil query
+        \Log::info('Histories API called, found ' . $arts->count() . ' records for customer ' . $customerId);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Riwayat pembelian berhasil diambil',
+            'data' => $arts
+        ], 200);
+
+    } catch (\Exception $e) {
+        \Log::error('Show Histories API Error: ' . $e->getMessage());
+        \Log::error('Trace: ' . $e->getTraceAsString());
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan server.'
+        ], 500);
     }
+}
    public function showProfile($id)
     {
         // Cari user, atau gagal dengan respons 404 jika tidak ditemukan
@@ -110,6 +151,11 @@ class DashboardController extends Controller
 
         if (!$user) {
             return $this->error('User not found', HttpResponseCode::HTTP_NOT_FOUND);
+        }
+
+        // Profil publik: email illustrator ditampilkan sebagai kontak, email customer tidak boleh bisa dikumpulkan lewat ID
+        if (!$user->illustrator) {
+            $user->makeHidden('email');
         }
 
         $artCount = -1;

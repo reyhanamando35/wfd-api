@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // Kunci bersama frontend <-> API (header X-Internal-Key), lihat App\Http\Middleware\VerifyInternalKey
+    'internal_api_key' => env('INTERNAL_API_KEY'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

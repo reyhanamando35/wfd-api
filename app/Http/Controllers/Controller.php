@@ -14,6 +14,11 @@ abstract class Controller
     use HttpResponse;
     protected $model;
 
+    // Path file dari frontend dirender apa adanya lewat asset() di <img src>/<a href>.
+    // asset() meloloskan skema seperti "JavaScript://%0a...", jadi hanya izinkan URL http(s) atau path lokal.
+    // "private/..." = bukti bayar di disk privat frontend, hanya dibuka lewat route yang dicek aksesnya.
+    protected const ASSET_PATH_RULE = ['required', 'string', 'max:255', 'regex:/^(https?:\/\/|storage\/|assets\/|private\/)[^\s"\'<>]+$/i'];
+
     public function __construct(Model $model)
     {
         $this->model = $model;

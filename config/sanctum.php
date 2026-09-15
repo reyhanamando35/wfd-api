@@ -34,7 +34,8 @@ return [
     |
     */
 
-    'guard' => ['web'],
+    // Hanya token: API dipanggil server-ke-server, tidak ada sesi/cookie browser yang perlu diautentikasi
+    'guard' => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -47,7 +48,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Token dulu berlaku selamanya; 1 hari cukup karena sesi frontend hanya 120 menit idle
+    'expiration' => env('SANCTUM_EXPIRATION', 1440),
 
     /*
     |--------------------------------------------------------------------------
