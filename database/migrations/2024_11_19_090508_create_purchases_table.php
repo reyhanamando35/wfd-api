@@ -15,7 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('payment_method');
             $table->string('file_path');
-            $table->boolean('is_verified')->default(0);
+            // Bukan boolean: ada 3 status. Boolean di PostgreSQL menolak nilai 2 (rejected)
+            $table->unsignedTinyInteger('is_verified')->default(0)->comment('0: pending, 1: verified, 2: rejected');
             $table->foreignId('customer_id')->constrained()->cascadeOnDelete();
             $table->foreignId('illustration_id')->constrained()->cascadeOnDelete();
             $table->timestamps();

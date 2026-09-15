@@ -15,12 +15,18 @@ Route::get('/users/{id}', [DashboardController::class, 'showProfile']);
 Route::get('/market/illustrations', [MarketController::class, 'getIllustrationsForMarket']);
 Route::get('/illustrations/{id}', [MarketController::class, 'showIllustrationsApi']);
 Route::get('/categories', [MarketController::class, 'getCategoriesApi']);
-Route::middleware('auth:sanctum')->post('/illustrations', [MarketController::class, 'sell']);
+// Route::middleware('auth:sanctum')->post('/illustrations', [MarketController::class, 'sell']);
 // Route::post('/purchase', [MarketController::class, 'buy']);
 Route::get('/market/filter', [MarketController::class, 'filter']);
+Route::prefix('api')->group(function () {
+
+});
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/illustrations', [MarketController::class, 'sell']);
     Route::get('/illustrator/listings', [DashboardController::class, 'getMyListings']);
+    Route::get('/collections/filter', [MarketController::class, 'filterCollections']);
+    Route::get('/illustrations/listings/filter', [MarketController::class, 'filterIllustrations']);
     Route::post('/purchase', [MarketController::class, 'buy']);
     Route::get('/user', function (Request $request) {
         return $request->user()->load('customer', 'illustrator'); // Muat relasi jika perlu
@@ -32,25 +38,30 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::post('/register/illustrator', [AuthController::class, 'registerIllustrator']);
 Route::post('/login/customer', [AuthController::class, 'loginCustomer']);
 Route::post('/login/illustrator', [AuthController::class, 'loginIllustrator']);
-Route::get('/customers', [AdminController::class, 'showCustomers']);
-Route::get('/illustrators', [AdminController::class, 'showIllustrators']);
-Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
-Route::get('/customers/{id}', [AdminController::class, 'showEditCustomer']);
-Route::get('/illustrators/{id}', [AdminController::class, 'showEditIllustrator']);
-Route::put('/editCustomer/{id}', [AdminController::class, 'editCustomer']);
-Route::put('/editIllustrator/{id}', [AdminController::class, 'editIllustrator']);
-Route::get('/purchases', [AdminController::class, 'showPurchases']);
-Route::post('/purchases/{id}/verify', [AdminController::class, 'verify']);
-Route::post('/purchases/{id}/reject', [AdminController::class, 'reject']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 
 
 // Route::middleware(['auth:sanctum', 'user'])->group(function () {
 //     Route::post('/logout', [AuthController::class, 'logout']);
 // });
+// Dipanggil server frontend setelah login Google (semua route API wajib X-Internal-Key)
 Route::post('/admin/check-email', [AdminController::class, 'checkEmail']);
 
-Route::middleware(['auth:sanctum', 'admin'])->group(function () {
-    // Route::post('/admin/check-email', [AdminController::class, 'checkEmail']);
+// Forgot password flow (dipanggil frontend illustrasia2)
+Route::post('/submitEmail', [AuthController::class, 'submitEmail']);
+Route::post('/validasiPW', [AuthController::class, 'validasiPW']);
+Route::post('/validasiPassword', [AuthController::class, 'validasiPassword']);
+
+Route::middleware('admin')->group(function () {
+    Route::get('/customers', [AdminController::class, 'showCustomers']);
+    Route::get('/illustrators', [AdminController::class, 'showIllustrators']);
+    Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
+    Route::get('/customers/{id}', [AdminController::class, 'showEditCustomer']);
+    Route::get('/illustrators/{id}', [AdminController::class, 'showEditIllustrator']);
+    Route::put('/editCustomer/{id}', [AdminController::class, 'editCustomer']);
+    Route::put('/editIllustrator/{id}', [AdminController::class, 'editIllustrator']);
+    Route::get('/purchases', [AdminController::class, 'showPurchases']);
+    Route::post('/purchases/{id}/verify', [AdminController::class, 'verify']);
+    Route::post('/purchases/{id}/reject', [AdminController::class, 'reject']);
     Route::post('/admin/logout', [AdminController::class, 'logout']);
 });

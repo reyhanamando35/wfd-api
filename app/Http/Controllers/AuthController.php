@@ -51,7 +51,7 @@ class AuthController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'bio' => 'required|string|max:500',
-            'profile_picture' => 'required|string|max:255',
+            'profile_picture' => self::ASSET_PATH_RULE,
         ]);
 
         if ($validator->fails()) {
@@ -88,7 +88,7 @@ class AuthController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'bio' => 'required|string|max:500',
-            'profile_picture' => 'required|string|max:255',
+            'profile_picture' => self::ASSET_PATH_RULE,
             'experience_years' => 'required|integer|min:0',
             'portofolio_link' => 'nullable|url', // 'nullable' berarti tidak wajib
         ]);
@@ -140,18 +140,14 @@ class AuthController extends Controller
             return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // 2. Coba otentikasi menggunakan Auth::attempt
-        if (!Auth::attempt($request->only('email', 'password'))) {
+        // 2. Cek kredensial tanpa login ke guard session: API ini stateless dan hanya memakai token Sanctum
+        $user = User::where('email', $request->email)->first();
+        if (!$user || !Hash::check($request->password, $user->password)) {
             return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
         }
 
-        // 3. Dapatkan user yang sudah terotentikasi
-        $user = User::where('email', $request->email)->first();
-
         // 4. Pastikan user ini adalah seorang customer
         if (!$user->customer()->exists()) {
-             // Jika bukan customer, logout dan beri error
-             Auth::logout();
              return $this->error('Your account is not a customer account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
@@ -181,18 +177,14 @@ class AuthController extends Controller
             return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // 2. Coba otentikasi menggunakan Auth::attempt
-        if (!Auth::attempt($request->only('email', 'password'))) {
+        // 2. Cek kredensial tanpa login ke guard session: API ini stateless dan hanya memakai token Sanctum
+        $user = User::where('email', $request->email)->first();
+        if (!$user || !Hash::check($request->password, $user->password)) {
             return $this->error('Invalid credentials!', HttpResponseCode::HTTP_UNAUTHORIZED);
         }
 
-        // 3. Dapatkan user yang sudah terotentikasi
-        $user = User::where('email', $request->email)->first();
-
         // 4. Pastikan user ini adalah seorang illustrator
         if (!$user->illustrator()->exists()) {
-             // Jika bukan illustrator, logout dan beri error
-             Auth::logout();
              return $this->error('Your account is not a Illustrator account.', HttpResponseCode::HTTP_FORBIDDEN);
         }
 
@@ -228,5 +220,95 @@ class AuthController extends Controller
         // 3. Jika tidak ada user (token tidak valid), kembalikan error Unauthorized.
         // Ini mencegah server dari crash dan memberikan respons yang benar.
         return $this->error('User not authenticated.', 401);
+    }
+
+    public function submitEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
+        }
+
+        // Respons sama untuk email terdaftar maupun tidak, supaya form ini tidak bisa dipakai mengecek email siapa yang punya akun
+        $sentMessage = 'If the email is registered, a password reset link has been sent. Please check your email.';
+        if (!User::where('email', $request->email)->exists()) {
+            return $this->success($sentMessage);
+        }
+
+        $token = \Illuminate\Support\Str::random(64);
+
+        // Simpan hash token supaya token asli hanya ada di email
+        \Illuminate\Support\Facades\DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $request->email],
+            ['token' => hash('sha256', $token), 'created_at' => now()]
+        );
+
+        $resetUrl = rtrim(env('FRONTEND_URL', 'http://localhost:8000'), '/') . '/validasi-forgot-password/' . $token;
+
+        \Illuminate\Support\Facades\Mail::raw(
+            "You requested a password reset for your Illustrasia account.\n\n"
+            . "Click the link below to reset your password (valid for 60 minutes):\n"
+            . $resetUrl . "\n\n"
+            . "If you did not request this, you can ignore this email.",
+            function ($message) use ($request) {
+                $message->to($request->email)->subject('Illustrasia - Reset Password');
+            }
+        );
+
+        return $this->success($sentMessage);
+    }
+
+    public function validasiPW(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
+        }
+
+        $record = \Illuminate\Support\Facades\DB::table('password_reset_tokens')
+            ->where('token', hash('sha256', $request->token))
+            ->first();
+
+        if (!$record || \Carbon\Carbon::parse($record->created_at)->diffInMinutes(now()) > 60) {
+            return $this->error('Token is not valid', HttpResponseCode::HTTP_BAD_REQUEST);
+        }
+
+        return $this->success('Token is valid');
+    }
+
+    public function validasiPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'password' => 'required|string|min:8',
+            'confirmPassword' => 'required|same:password',
+            'token' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error($validator->errors()->first(), HttpResponseCode::HTTP_UNPROCESSABLE_ENTITY, $validator->errors());
+        }
+
+        $record = \Illuminate\Support\Facades\DB::table('password_reset_tokens')
+            ->where('token', hash('sha256', $request->token))
+            ->first();
+
+        if (!$record || \Carbon\Carbon::parse($record->created_at)->diffInMinutes(now()) > 60) {
+            return $this->error('Token is not valid', HttpResponseCode::HTTP_BAD_REQUEST);
+        }
+
+        User::where('email', $record->email)->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        // Token sekali pakai
+        \Illuminate\Support\Facades\DB::table('password_reset_tokens')->where('email', $record->email)->delete();
+
+        return $this->success('Password has been reset');
     }
 }

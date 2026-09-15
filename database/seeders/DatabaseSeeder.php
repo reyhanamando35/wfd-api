@@ -62,7 +62,7 @@ class DatabaseSeeder extends Seeder
                 'user_id' => 2,
                 'experience_years' => 5,
                 'portofolio_link' => 'https://canva.com',
-                'is_open_commision' => 1,
+                'is_open_commision' => true,
             ],
         ];
         Illustrator::insert($illustrators);
